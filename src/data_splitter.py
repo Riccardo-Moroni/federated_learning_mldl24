@@ -19,7 +19,8 @@ class DataSplitter:
         self.dataset = params['dataset']
         self.K = params['K']
         
-        self.transform =  params['transform']
+        if params.get('transform') is not None: # TODO may be useful to change the this class' functions in order to return an array of data loaders
+            self.transform =  params['transform']
         
         if params.get("n_labels") is None:
             self.n_labels = None
@@ -43,7 +44,7 @@ class DataSplitter:
         return torch.utils.data.random_split(self.dataset, [self.samples_per_client] * self.K)
     
     def pachinko_allocation_split_cifar100(self, alpha=0.1, beta=10):  # TODO implement n_labels = ?
-        """Generates a pachinko allocation of cifar100 dataset (loaded with load_dataset() function)
+        """Generates a pachinko allocation of cifar100 dataset (loaded with load_dataset() function coming from datasets library (huggingface) because torchvision.datasets.CIFAR100 does not natively provide coarse_labels)
         Each sample in the dataset should have "coarse_label" and a "fine_label" attribute. 
 
         Args:
@@ -141,6 +142,9 @@ class DataSplitter:
         return all_clients_datasets
     
     def non_iid_split(self):
+        """
+        works with torchvision.datasets.CIFAR100
+        """
         sorted_dataset = sorted(self.dataset, key=lambda x: x[1])
         shards_per_client = 2 #
         shard_size = int(self.samples_per_client / shards_per_client)
@@ -172,15 +176,21 @@ class DataSplitter:
         for _ in range(self.K):
             # Randomly select labels for the current client
             client_labels = np.random.choice(unique_labels, self.n_labels, replace=False)
+            
+            print("client_labels:", client_labels)
 
             indices = []
 
             for label in client_labels:
                 label_indices = np.where(targets == label)[0]
                 label_indices = np.setdiff1d(label_indices, used_indices)
+                
+                print("label_indices:", label_indices)
 
                 # Select a subset of indices for this label
-                subset_indices = np.random.choice(label_indices, int(self.samples_per_client/n_labels), replace=False)
+                subset_indices = np.random.choice(label_indices, int(self.samples_per_client/self.n_labels), replace=False)
+
+                print("subset_indices:", subset_indices)
 
                 indices.extend(subset_indices)
                 used_indices = np.union1d(used_indices, subset_indices)
@@ -217,34 +227,89 @@ plt.show()
 # %%
 # testing split_cifar100_non_iid_given_n_labels()
 
-n_labels = 5
-K = 20
-samples_per_client = 15
+# n_labels = 1
+# K = 100
+# samples_per_client = 50
+
+# cifar_train = CIFAR100(root='../torchvision_datasets', train=True, download=True)
+
+# preprocess = transforms.Compose([
+#     transforms.RandomCrop((24, 24)),
+#     transforms.RandomHorizontalFlip(),
+#     transforms.ToTensor(),
+#     transforms.Normalize(mean=[0.5071, 0.4867, 0.4408], std=[0.2675, 0.2565, 0.2761])
+# ])
+
+# params = {
+#     "dataset":cifar_train,
+#     # "transform": preprocess,
+#     "K":K,
+#     "n_labels":n_labels,
+#     # "samples_per_client":samples_per_client,
+# }
+
+# non_iid_data_clients = DataSplitter(params).split_cifar100_non_iid_given_n_labels()
+
+# # print(non_iid_data)
+
+# for c in non_iid_data_clients:
+#     for p in c: 
+#         print(p)
+#     print("\n\n")
+     
+
+            
+# %%
+from torchvision.datasets import CIFAR100
+import numpy as np
+import pandas as pd
+from tqdm import tqdm
+
+K = 100
+n_labels = 1
 
 cifar_train = CIFAR100(root='../torchvision_datasets', train=True, download=True)
 
-preprocess = transforms.Compose([
-    transforms.RandomCrop((24, 24)),
-    transforms.RandomHorizontalFlip(),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.5071, 0.4867, 0.4408], std=[0.2675, 0.2565, 0.2761])
-])
+def sort_it_and_it_will_make_sense(dataset, K, n_labels):
+    """
+    works with torchvision.datasets.CIFAR100
+    """
+    samples_per_client = len(dataset)/K
+    
+    sorted_dataset = sorted(dataset, key=lambda x: x[1])
+    
+    cifar100_df = pd.DataFrame(sorted_dataset, columns=["img", "targets"])
+    
+    samples_per_label = int(samples_per_client/n_labels)
+    
+    clients = []
 
-params = {
-    "dataset":cifar_train,
-    "transform": preprocess,
-    "K":K,
-    "n_labels":n_labels,
-    "samples_per_client":samples_per_client,
-}
+    for c in tqdm(range(K)):
+        client_data = []
+        chosen_labels = list(cifar100_df["targets"].unique()[:n_labels-1]) # TODO check this -1
+        
+        for label in chosen_labels:
+            
+            label_data = cifar100_df[cifar100_df["targets"] == label]
+            
+            if len(label_data) >= samples_per_label: # add
+                sampled_indices = label_data.sample(samples_per_label).index
+                client_data.extend(label_data.loc[sampled_indices].values.tolist())
+                cifar100_df = cifar100_df.drop(sampled_indices)
+                remaining_label_data = cifar100_df[cifar100_df["targets"] == label]
+                
+                if len(remaining_label_data) < samples_per_label: # add also the remaining 
+                    client_data.extend(label_data.values.tolist())
+                    cifar100_df = cifar100_df[cifar100_df["targets"] != label]
+                    
+            else:
+                break
 
-non_iid_data_clients = DataSplitter(params).split_cifar100_non_iid_given_n_labels()
+        clients.append(client_data)
 
-# print(non_iid_data)
+    return clients, cifar100_df
 
-for c in non_iid_data_clients:
-    for p in c: 
-        print(p)
-    print("\n\n")
+
+clients, remaining_data = sort_it_and_it_will_make_sense(cifar_train, K, n_labels)
 
 # %%
