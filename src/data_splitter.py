@@ -164,42 +164,63 @@ class DataSplitter:
         ]
     
     
-    def split_cifar100_non_iid_given_n_labels(self):
-        targets = np.array(self.dataset.targets)
+    def sort_it_and_it_will_make_sense(self):
+        """
+        works with torchvision.datasets.CIFAR100
+        """
+        
+        def find_clients_with_label(dictionary, label):
+            clients_with_label = []
+            for client_id, labels in dictionary.items():
+                if label in labels:
+                    clients_with_label.append(client_id)
+            return clients_with_label
 
-        unique_labels = np.unique(targets)
+        samples_per_client = int(len(self.dataset)/self.K)
+        print("samples_per_client:", samples_per_client)
 
+        sorted_dataset = sorted(self.dataset, key=lambda x: x[1])
+
+        cifar100_df = pd.DataFrame(sorted_dataset, columns=["img", "targets"])
+
+        samples_per_label = int(samples_per_client/self.n_labels)
+        print("samples_per_label:", samples_per_label)
         clients = []
 
-        used_indices = []
+        client_labels_dict = {} # labels owned by each client
 
-        for _ in range(self.K):
-            # Randomly select labels for the current client
-            client_labels = np.random.choice(unique_labels, self.n_labels, replace=False)
-            
-            print("client_labels:", client_labels)
+        for c in tqdm(range(self.K)):
+            client_data = []
+            clients_labels = list(cifar100_df["targets"].unique()[:self.n_labels])
+            print("clients labels:", clients_labels)
 
-            indices = []
+            client_labels_dict[c] = clients_labels
 
-            for label in client_labels:
-                label_indices = np.where(targets == label)[0]
-                label_indices = np.setdiff1d(label_indices, used_indices)
-                
-                print("label_indices:", label_indices)
+            for label in clients_labels:
 
-                # Select a subset of indices for this label
-                subset_indices = np.random.choice(label_indices, int(self.samples_per_client/self.n_labels), replace=False)
+                label_data = cifar100_df[cifar100_df["targets"] == label]
 
-                print("subset_indices:", subset_indices)
+                if len(label_data) >= samples_per_label: # add
+                    sampled_indices = label_data.sample(samples_per_label).index
+                    client_data.extend(label_data.loc[sampled_indices].values.tolist())
+                    cifar100_df = cifar100_df.drop(sampled_indices)
+                    remaining_label_data = cifar100_df[cifar100_df["targets"] == label]
 
-                indices.extend(subset_indices)
-                used_indices = np.union1d(used_indices, subset_indices)
+                    if len(remaining_label_data) < samples_per_label: # add also the remaining to the client
+                        client_data.extend(remaining_label_data.values.tolist())
+                        cifar100_df = cifar100_df[cifar100_df["targets"] != label]
 
-            client_data = Subset(self.dataset, indices)
-            
+                else:
+                    print("Warning: a client is getting all the data belonging to a label, which is less than len(dataset)/(K*n_labels)")
+                    sampled_indices = label_data.index
+                    client_data.extend(label_data.values.tolist())
+                    cifar100_df = cifar100_df.drop(sampled_indices)
+
             clients.append(client_data)
 
-        return clients
+        return clients, cifar100_df
+
+    
     
 
 # %%
@@ -223,128 +244,10 @@ plt.xlabel("Number of unique labels")
 plt.ylabel("Frequency")
 plt.show() 
 
-
-# %%
-# testing split_cifar100_non_iid_given_n_labels()
-
-# n_labels = 1
-# K = 100
-# samples_per_client = 50
-
-# cifar_train = CIFAR100(root='../torchvision_datasets', train=True, download=True)
-
-# preprocess = transforms.Compose([
-#     transforms.RandomCrop((24, 24)),
-#     transforms.RandomHorizontalFlip(),
-#     transforms.ToTensor(),
-#     transforms.Normalize(mean=[0.5071, 0.4867, 0.4408], std=[0.2675, 0.2565, 0.2761])
-# ])
-
-# params = {
-#     "dataset":cifar_train,
-#     # "transform": preprocess,
-#     "K":K,
-#     "n_labels":n_labels,
-#     # "samples_per_client":samples_per_client,
-# }
-
-# non_iid_data_clients = DataSplitter(params).split_cifar100_non_iid_given_n_labels()
-
-# # print(non_iid_data)
-
-# for c in non_iid_data_clients:
-#     for p in c: 
-#         print(p)
-#     print("\n\n")
-     
-
-            
+        
 # %%
 # testing sort_it_and_it_will_make_sense()
-from torchvision.datasets import CIFAR100
-import numpy as np
-import pandas as pd
-from tqdm import tqdm
 
-def find_clients_with_label(dictionary, label):
-    clients_with_label = []
-    for client_id, labels in dictionary.items():
-        if label in labels:
-            clients_with_label.append(client_id)
-    return clients_with_label
-
-K = 100
-n_labels = 15
-
-cifar_train = CIFAR100(root='../torchvision_datasets', train=True, download=True)
-
-def sort_it_and_it_will_make_sense(dataset, K, n_labels):
-    """
-    works with torchvision.datasets.CIFAR100
-    """
-    samples_per_client = int(len(dataset)/K)
-    print("samples_per_client:", samples_per_client)
-    
-    sorted_dataset = sorted(dataset, key=lambda x: x[1])
-    
-    cifar100_df = pd.DataFrame(sorted_dataset, columns=["img", "targets"])
-    
-    samples_per_label = int(samples_per_client/n_labels)
-    print("samples_per_label:", samples_per_label)
-    clients = []
-    
-    client_labels_dict = {}
-
-    for c in tqdm(range(K)):
-        client_data = []
-        clients_labels = list(cifar100_df["targets"].unique()[:n_labels]) # TODO check 
-        print("clients labels:", clients_labels)
-        
-        client_labels_dict[c] = clients_labels
-        
-        for label in clients_labels:
-            
-            label_data = cifar100_df[cifar100_df["targets"] == label]
-            
-            if len(label_data) >= samples_per_label: # add
-                sampled_indices = label_data.sample(samples_per_label).index
-                client_data.extend(label_data.loc[sampled_indices].values.tolist())
-                cifar100_df = cifar100_df.drop(sampled_indices)
-                remaining_label_data = cifar100_df[cifar100_df["targets"] == label]
-                
-                if len(remaining_label_data) < samples_per_label: # add also the remaining to the client
-                    client_data.extend(label_data.values.tolist())
-                    cifar100_df = cifar100_df[cifar100_df["targets"] != label]
-                    
-            else:
-                print("Warning: a client is getting all the data belonging to a label, which is less than len(dataset)/(K*n_labels)")
-                sampled_indices = label_data.index
-                client_data.extend(label_data.values.tolist())
-                cifar100_df = cifar100_df.drop(sampled_indices)
-
-        clients.append(client_data)
-    
-    for label in cifar100_df["targets"].unique(): # distribute evenly the remaining data among clients already having that label
-        clients_with_label = find_clients_with_label(client_labels_dict, label)
-        num_clients = len(clients_with_label)
-        label_data = cifar100_df[cifar100_df["targets"] == label]
-        num_data_points = len(label_data)
-        data_per_client = num_data_points // num_clients
-        
-        start_index = 0
-        for client_id in clients_with_label:
-            end_index = start_index + data_per_client
-            clients[client_id].extend(label_data.iloc[start_index:end_index].values.tolist())
-            start_index = end_index
-            
-        appended_indices = label_data.iloc[:num_clients * data_per_client].index
-        cifar100_df = cifar100_df.drop(appended_indices)
-            
-        # there still may be some (num_data_points % num_clients) tuples
-
-    return clients, cifar100_df
-
-
-clients, remaining_data = sort_it_and_it_will_make_sense(cifar_train, K, n_labels)
-
+params = {"dataset":CIFAR100(root='../torchvision_datasets', train=True, download=True), "K":100, "n_labels":5}
+non_iid_nlabels_clients, unused_data = DataSplitter(params).sort_it_and_it_will_make_sense()
 # %%
