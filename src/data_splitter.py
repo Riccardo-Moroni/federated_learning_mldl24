@@ -15,17 +15,13 @@ from torchvision import transforms
 # %%
 
 class DataSplitter: 
-    def __init__(self, params):
-        self.dataset = params['dataset']
+    def __init__(self, params, dataset, transform=None):
+        self.params = params
+        self.dataset = dataset
         self.K = params['K']
         
-        if params.get('transform') is not None: # TODO may be useful to change the this class' functions in order to return an array of data loaders
-            self.transform =  params['transform']
-        
-        if params.get("n_labels") is None:
-            self.n_labels = None
-        else:
-            self.n_labels = params["n_labels"]
+        self.transform = transform # TODO may be useful to change the this class' functions in order to return an array of data loaders
+        self.n_labels = params.get("n_labels")
         
         if params.get("samples_per_client") is None:
             self.samples_per_client = int(len(self.dataset) / self.K)
@@ -40,10 +36,13 @@ class DataSplitter:
             if self.K* self.n_labels > len(self.dataset):
                 raise ValueError(f"Number of clients multiplied by the number of labels requred per client (K*n_labels = {self.K}*{self.n_labels} = {self.K*self.n_labels}) cannot be greater than the number of samples in the (len(dataset)={len(self.dataset)}).")
         
-    def idd_split(self): 
+        self.split_method = params.get('split_method')
+
+
+    def iid_split(self): 
         return torch.utils.data.random_split(self.dataset, [self.samples_per_client] * self.K)
     
-    def pachinko_allocation_split_cifar100(self, alpha=0.1, beta=10):  # TODO implement n_labels = ?
+    def pachinko_allocation_split_cifar100(self):  # TODO implement n_labels = ?
         """Generates a pachinko allocation of cifar100 dataset (loaded with load_dataset() function coming from datasets library (huggingface) because torchvision.datasets.CIFAR100 does not natively provide coarse_labels)
         Each sample in the dataset should have "coarse_label" and a "fine_label" attribute. 
 
@@ -54,6 +53,9 @@ class DataSplitter:
         Returns:
             list: a list of lists. Each element of the outer list is a list of samples (eg. images for cifar100).
         """
+        alpha = self.params['alpha']
+        beta = self.params['beta']
+    
         dataset_list = []
         for sample in self.dataset:
             dataset_list.append({
@@ -146,7 +148,7 @@ class DataSplitter:
         works with torchvision.datasets.CIFAR100
         """
         sorted_dataset = sorted(self.dataset, key=lambda x: x[1])
-        shards_per_client = 2 #
+        shards_per_client = self.n_labels
         shard_size = int(self.samples_per_client / shards_per_client)
         shards = [
             torch.utils.data.Subset(
@@ -220,34 +222,10 @@ class DataSplitter:
 
         return clients, cifar100_df
 
-    
-    
-
-# %%
-# testing paching allocation
-
-from datasets import load_dataset
-import matplotlib.pyplot as plt
-
-cifar_train, cifar_test = load_dataset("cifar100", split = ["train", "test"])
-print(cifar_train.shape, cifar_test.shape)
-        
-params = {'K':500, 'dataset':cifar_train}
-        
-data_split_pachinko = DataSplitter(params).pachinko_allocation_split_cifar100()
-
-uniques = [ len(set([data_split_pachinko[i][j][1] for j in range(len(data_split_pachinko[i]))])) for i in range(len(data_split_pachinko))]
-
-plt.hist(uniques, bins=20)
-plt.title("CIFAR-100 Client Label Distribution")
-plt.xlabel("Number of unique labels")
-plt.ylabel("Frequency")
-plt.show() 
-
-        
-# %%
-# testing sort_it_and_it_will_make_sense()
-
-params = {"dataset":CIFAR100(root='../torchvision_datasets', train=True, download=True), "K":100, "n_labels":5}
-non_iid_nlabels_clients, unused_data = DataSplitter(params).sort_it_and_it_will_make_sense()
-# %%
+    def split(self):
+        if self.split_method == 'pachinko':
+            return self.pachinko_allocation_split_cifar100()
+        elif self.split_method == 'non-iid':
+            return self.non_iid_split()
+        else:
+            return self.iid_split()
