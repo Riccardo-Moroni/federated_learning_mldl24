@@ -1,18 +1,11 @@
-# %%
 import pandas as pd
 import torch
 import networkx as nx
 import numpy as np
 from tqdm import tqdm
 import random
-
 import numpy as np
-from torchvision.datasets import CIFAR100
-from torch.utils.data import DataLoader, Subset
 
-from torchvision import transforms
-
-# %%
 
 class DataSplitter: 
     def __init__(self, params, dataset, transform=None):
@@ -42,6 +35,7 @@ class DataSplitter:
     def iid_split(self): 
         return torch.utils.data.random_split(self.dataset, [self.samples_per_client] * self.K)
     
+
     def pachinko_allocation_split_cifar100(self):  # TODO implement n_labels = ?
         """Generates a pachinko allocation of cifar100 dataset (loaded with load_dataset() function coming from datasets library (huggingface) because torchvision.datasets.CIFAR100 does not natively provide coarse_labels)
         Each sample in the dataset should have "coarse_label" and a "fine_label" attribute. 
@@ -143,40 +137,11 @@ class DataSplitter:
         
         return all_clients_datasets
     
+
     def non_iid_split(self):
         """
         works with torchvision.datasets.CIFAR100
         """
-        sorted_dataset = sorted(self.dataset, key=lambda x: x[1])
-        shards_per_client = self.n_labels
-        shard_size = int(self.samples_per_client / shards_per_client)
-        shards = [
-            torch.utils.data.Subset(
-                sorted_dataset,
-                range(i*shard_size, (i+1)*shard_size)
-            )
-            for i in range(self.K*shards_per_client)
-        ]
-
-        random.shuffle(shards)
-
-        return [
-            torch.utils.data.ConcatDataset([shards[2*i], shards[2*i+1]])
-            for i in range(self.K)
-        ]
-    
-    
-    def sort_it_and_it_will_make_sense(self):
-        """
-        works with torchvision.datasets.CIFAR100
-        """
-        
-        def find_clients_with_label(dictionary, label):
-            clients_with_label = []
-            for client_id, labels in dictionary.items():
-                if label in labels:
-                    clients_with_label.append(client_id)
-            return clients_with_label
 
         samples_per_client = int(len(self.dataset)/self.K)
         print("samples_per_client:", samples_per_client)
@@ -194,8 +159,6 @@ class DataSplitter:
         for c in tqdm(range(self.K)):
             client_data = []
             clients_labels = list(cifar100_df["targets"].unique()[:self.n_labels])
-            print("clients labels:", clients_labels)
-
             client_labels_dict[c] = clients_labels
 
             for label in clients_labels:
@@ -220,7 +183,7 @@ class DataSplitter:
 
             clients.append(client_data)
 
-        return clients, cifar100_df
+        return clients
 
     def split(self):
         if self.split_method == 'pachinko':
