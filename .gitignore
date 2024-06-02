@@ -1,2 +1,6 @@
 datasets/
 torchvision_datasets/
+__pycache__/
+wandb/
+backups/
+pickles/
