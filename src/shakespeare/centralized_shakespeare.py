@@ -9,6 +9,8 @@ import matplotlib.pyplot as plt
 import json
 import itertools
 import pickle
+import torch.optim as optim
+from torch.utils.data import TensorDataset
 
 from CharRNN import CharRNN
 
@@ -16,36 +18,207 @@ from CharRNN import CharRNN
 # wandb.login()
 
 # %% 
-# Creating pickels (avoid if already have pickles)
-all_data_json_path = '../../datasets/shakespeare/all_data/all_data.json'
-with open(all_data_json_path) as json_data:
-    all_data_dict = json.load(json_data)
+def x_y_from_path(json_path:str):
+    with open(json_path) as json_data:
+        data_dict = json.load(json_data)
+    X , Y = [], []
+    for k in data_dict['user_data'].keys():
+        X.append(data_dict['user_data'][k]['x'])
+        Y.append(data_dict['user_data'][k]['y'])
+    X = list(itertools.chain(*X))
+    Y = list(itertools.chain(*Y))
+    return X,Y
 
-X , Y = [], []
-for k in all_data_dict['user_data'].keys():
-    X.append(all_data_dict['user_data'][k]['x'])
-    Y.append(all_data_dict['user_data'][k]['y'])
-X = list(itertools.chain(*X))
-Y = list(itertools.chain(*Y))
+json_train_path = '../../datasets/shakespeare/train/all_data_niid_0_keep_0_train_9.json'
+json_test_path = '../../datasets/shakespeare/test/all_data_niid_0_keep_0_test_9.json'
 
-# saving pickles of X and Y
-with open('./pickles/X.pkl', 'wb') as f:
-    pickle.dump(X, f)
-with open('./pickles/Y.pkl', 'wb') as f:
-    pickle.dump(Y, f)
+X_train, Y_train = x_y_from_path(json_train_path)
+X_test, Y_test = x_y_from_path(json_test_path)
 
-long_sentence = ' '.join(X)
-
-# all_data_txt_path = '../../datasets/shakespeare/raw_data/raw_data.txt'
-# all_data_txt = open(all_data_txt_path, mode='r').read()
-
-vocab = sorted(set(long_sentence))
+# save X and Y in ./pickles/ folder
+with open('./pickles/X_train.pkl', 'wb') as f:
+    pickle.dump(X_train, f)
+with open('./pickles/Y_train.pkl', 'wb') as f:
+    pickle.dump(Y_train, f)
+with open('./pickles/X_test.pkl', 'wb') as f:
+    pickle.dump(X_test, f)
+with open('./pickles/Y_test.pkl', 'wb') as f:
+    pickle.dump(Y_test, f)
 
 # %%
 # Load pickles
-with open('./pickles/X.pkl', 'rb') as f:
-    X = pickle.load(f)
-with open('./pickles/Y.pkl', 'rb') as f:
-    Y = pickle.load(f)
+with open('./pickles/X_train.pkl', 'rb') as f:
+    X_train = pickle.load(f)
+with open('./pickles/Y_train.pkl', 'rb') as f:
+    Y_train = pickle.load(f)
+with open('./pickles/X_test.pkl', 'rb') as f:
+    X_test = pickle.load(f)
+with open('./pickles/Y_test.pkl', 'rb') as f:
+    Y_test = pickle.load(f)
 
 # %%
+# vocab init
+long_sentence = ' '.join(X_train)
+vocab = sorted(set(long_sentence))
+vocab += ['\n', '<bol>', '<eol>']
+
+char_to_idx = {char: idx for idx, char in enumerate(vocab)}
+idx_to_char = {idx: char for idx, char in enumerate(vocab)}
+
+def encode(data, dict):
+    x = []
+    for i in tqdm(range(len(data))):
+        x.append(np.array([dict[char] for char in X_train[i]]))
+    return x
+
+X_train_enc = encode(X_train, char_to_idx)
+Y_train_enc = encode(Y_train, char_to_idx)
+X_test_enc = encode(X_test, char_to_idx)
+Y_test_enc = encode(Y_test, char_to_idx)
+
+X_train_tensor = torch.tensor(np.array(X_train_enc), dtype=torch.long)
+Y_train_tensor = torch.tensor(np.array(Y_train_enc), dtype=torch.long)
+
+X_test_tensor = torch.tensor(np.array(X_test_enc), dtype=torch.long)
+Y_test_tensor = torch.tensor(np.array(Y_test_enc), dtype=torch.long)
+
+train_dataset = TensorDataset(X_train_tensor, Y_train_tensor)
+test_dataset = TensorDataset(X_test_tensor, Y_test_tensor)
+
+# training parameters
+train_params = {
+    'batch_size' : 64,
+    'lr' : 1e-2,
+    'epochs' : 1,
+    'momentum': 0.9,
+}
+
+train_loader = DataLoader(train_dataset, train_params['batch_size'], shuffle=True)
+test_loader = DataLoader(test_dataset, train_params['batch_size'])
+
+# %%
+# model parameters
+model_params = {
+    'vocab_size' : len(vocab), # in the paper they say to use 86 characters + 4 special tokens (padding, out-of-vocabulary, beginning of line and end of line)
+    'embedding_dim' : 8,
+    'hidden_size' : 256
+}
+
+model = CharRNN(model_params['vocab_size']).cuda()
+model.to('cuda')
+print(model)
+
+criterion = torch.nn.CrossEntropyLoss().cuda()
+optimizer = torch.optim.SGD(model.parameters(), lr=train_params['lr'], momentum=train_params['momentum'], weight_decay=4e-4)
+
+test_freq = 50
+
+def train(model):
+    accuracies = []
+    losses = []
+    for t in tqdm(range(train_params['epochs'])):
+        model.train()
+
+        for batch_idx, (inputs, targets) in enumerate(train_loader):
+            inputs, targets = inputs.cuda(), targets.cuda()
+            optimizer.zero_grad()
+            outputs = model(inputs)
+            loss = criterion(outputs, targets)
+            loss.backward()
+            optimizer.step()
+
+        # test (after each single epoch)
+        acc, loss = test(model)
+        accuracies.append(acc)
+        losses.append(loss)
+
+    return accuracies, losses
+
+def test(model):
+    model.eval()
+    test_loss = 0
+    correct = 0
+    total = 0
+
+    with torch.no_grad():
+        progress_bar = tqdm(enumerate(test_loader), total=len(test_loader), desc=f"Testing...")
+        for batch_idx, (inputs, targets) in progress_bar: 
+            inputs, targets = inputs.cuda(), targets.cuda()
+            outputs = model(inputs)
+            loss = criterion(outputs, targets)
+
+            test_loss += loss.item()
+            _, predicted = outputs.max(1)
+            total += targets.size(0)
+            correct += predicted.eq(targets).sum().item()
+
+    test_loss = test_loss / len(test_loader)
+    test_accuracy = 100. * correct / total
+    print(f'Test Loss: {test_loss:.6f} Acc: {test_accuracy:.2f}%')
+    return test_accuracy, test_loss
+
+# %%
+accuracies, losses = train(model)
+
+# %%
+import os
+import json
+import torch
+from torch.utils.data import Dataset, DataLoader
+
+def load_json_files(directory):
+    data = []
+    for filename in os.listdir(directory):
+        if filename.endswith(".json"):
+            with open(os.path.join(directory, filename), 'r') as f:
+                client_data = json.load(f)
+                data.extend(client_data)
+    return data
+
+train_data = load_json_files('../../datasets/shakespeare/tensorflow_version/shakespeare_data/train')
+test_data = load_json_files('../../datasets/shakespeare/tensorflow_version/shakespeare_data/test')
+
+sequence_length = 80
+def create_sequences(data, sequence_length):
+    inputs, targets = [], []
+    for snippet in data:
+        text = snippet['text']
+        for i in range(len(text) - sequence_length):
+            inputs.append(text[i:i + sequence_length])
+            targets.append(text[i + sequence_length])
+    return inputs, targets
+
+train_inputs, train_targets = create_sequences(train_data, sequence_length)
+test_inputs, test_targets = create_sequences(test_data, sequence_length)
+
+# %%
+# Encode
+all_text = ''.join([snippet['text'] for snippet in train_data])
+vocab = sorted(set(all_text))
+char2idx = {char: idx for idx, char in enumerate(vocab)}
+idx2char = {idx: char for idx, char in enumerate(vocab)}
+
+def encode(text, char2idx):
+    return [char2idx[char] for char in text]
+
+train_inputs_enc = [encode(seq, char2idx) for seq in train_inputs]
+train_targets_enc = [char2idx[char] for char in train_targets]
+test_inputs_enc = [encode(seq, char2idx) for seq in test_inputs]
+test_targets_enc = [char2idx[char] for char in test_targets]
+
+class ShakespeareDataset(Dataset):
+    def __init__(self, inputs, targets):
+        self.inputs = inputs
+        self.targets = targets
+
+    def __len__(self):
+        return len(self.inputs)
+
+    def __getitem__(self, idx):
+        return torch.tensor(self.inputs[idx]), torch.tensor(self.targets[idx])
+
+train_dataset = ShakespeareDataset(train_inputs_enc, train_targets_enc)
+test_dataset = ShakespeareDataset(test_inputs_enc, test_targets_enc)
+
+train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)

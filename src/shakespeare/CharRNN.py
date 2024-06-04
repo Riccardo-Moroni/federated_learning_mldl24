@@ -1,11 +1,13 @@
 # %%
 import torch 
 import torch.nn as nn
-import torch.optim as optim
+
+embed_dim = 8
+lstm_units = 256
 
 # %%
 class CharRNN(nn.Module):
-    def __init__(self, vocab_size, embed_dim, lstm_units, sequence_length):
+    def __init__(self, vocab_size):
         super(CharRNN, self).__init__()
         self.embedding = nn.Embedding(vocab_size, embed_dim)
         self.lstm1 = nn.LSTM(embed_dim, lstm_units, batch_first=True)
@@ -27,9 +29,8 @@ class CharRNN(nn.Module):
 # vocab_size = 90 # 86 characters + 4 special tokens (padding, out-of-vocabulary, beginning of line and end of line)
 # embedding_dim = 8
 # hidden_size = 256
-# num_layers = 2
 
-# model = CharRNN(vocab_size, embedding_dim, hidden_size, num_layers)
+# model = CharRNN(vocab_size, embedding_dim, hidden_size)
 
 # # print trainable parameters per layer
 # def print_trainable_parameters(model):
