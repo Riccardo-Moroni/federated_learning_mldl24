@@ -57,18 +57,29 @@ with open('./pickles/Y_test.pkl', 'rb') as f:
     Y_test = pickle.load(f)
 
 # %%
-# vocab init
-long_sentence = ' '.join(X_train)
-vocab = sorted(set(long_sentence))
-vocab += ['\n', '<bol>', '<eol>']
+train_sentence = ' '.join(X_train)
+vocab_train = sorted(set(train_sentence))
+vocab_train.append('<OOV>')
 
-char_to_idx = {char: idx for idx, char in enumerate(vocab)}
-idx_to_char = {idx: char for idx, char in enumerate(vocab)}
+char_to_idx = {char: idx for idx, char in enumerate(vocab_train)}
+idx_to_char = {idx: char for idx, char in enumerate(vocab_train)}
 
+def substitute_oov(sentences, char_to_idx):
+    substituted_sentences = []
+    for s in sentences:
+        new_s = ''.join([char if char in char_to_idx.keys() else '' for char in s])
+        substituted_sentences.append(new_s)
+    return substituted_sentences
+
+X_test = substitute_oov(X_test, char_to_idx)
+Y_test = substitute_oov(Y_test, char_to_idx)
+
+# %%
+# create a ./tensors/ folder in which to save the (encoded) tensors 
 def encode(data, dict):
     x = []
     for i in tqdm(range(len(data))):
-        x.append(np.array([dict[char] for char in X_train[i]]))
+            x.append(np.array([dict[char] for char in data[i]]))
     return x
 
 X_train_enc = encode(X_train, char_to_idx)
@@ -78,17 +89,30 @@ Y_test_enc = encode(Y_test, char_to_idx)
 
 X_train_tensor = torch.tensor(np.array(X_train_enc), dtype=torch.long)
 Y_train_tensor = torch.tensor(np.array(Y_train_enc), dtype=torch.long)
-
 X_test_tensor = torch.tensor(np.array(X_test_enc), dtype=torch.long)
 Y_test_tensor = torch.tensor(np.array(Y_test_enc), dtype=torch.long)
 
+# save tensors
+torch.save(X_train_tensor,'./tensors/X_train_tensor.pt')
+torch.save(Y_train_tensor,'./tensors/Y_train_tensor.pt')
+torch.save(X_test_tensor,'./tensors/X_test_tensor.pt')
+torch.save(Y_test_tensor,'./tensors/Y_test_tensor.pt')
+
+# %%
+# load tensors
+X_train_tensor = torch.load('./tensors/X_train_tensor.pt')
+Y_train_tensor = torch.load('./tensors/Y_train_tensor.pt')
+X_test_tensor = torch.load('./tensors/X_test_tensor.pt')
+Y_test_tensor = torch.load('./tensors/Y_test_tensor.pt')
+
+# %%
 train_dataset = TensorDataset(X_train_tensor, Y_train_tensor)
 test_dataset = TensorDataset(X_test_tensor, Y_test_tensor)
 
 # training parameters
 train_params = {
-    'batch_size' : 64,
-    'lr' : 1e-2,
+    'batch_size' : 100,
+    'lr' : 1e-1,
     'epochs' : 1,
     'momentum': 0.9,
 }
@@ -99,12 +123,12 @@ test_loader = DataLoader(test_dataset, train_params['batch_size'])
 # %%
 # model parameters
 model_params = {
-    'vocab_size' : len(vocab), # in the paper they say to use 86 characters + 4 special tokens (padding, out-of-vocabulary, beginning of line and end of line)
-    'embedding_dim' : 8,
-    'hidden_size' : 256
+    'vocab_size' : len(vocab_train),
+    'embed_dim' : 8,
+    'lstm_units' : 256,
 }
 
-model = CharRNN(model_params['vocab_size']).cuda()
+model = CharRNN(vocab_size = model_params['vocab_size'], embed_dim = model_params['embed_dim'], lstm_units=model_params['lstm_units']).cuda()
 model.to('cuda')
 print(model)
 

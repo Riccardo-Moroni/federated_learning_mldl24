@@ -2,26 +2,19 @@
 import torch 
 import torch.nn as nn
 
-embed_dim = 8
-lstm_units = 256
-
 # %%
 class CharRNN(nn.Module):
-    def __init__(self, vocab_size):
+    def __init__(self, vocab_size, embed_dim, lstm_units):
         super(CharRNN, self).__init__()
         self.embedding = nn.Embedding(vocab_size, embed_dim)
-        self.lstm1 = nn.LSTM(embed_dim, lstm_units, batch_first=True)
-        self.lstm2 = nn.LSTM(lstm_units, lstm_units, batch_first=True, bias=False)
+        self.stacked_lstm = nn.LSTM(embed_dim, lstm_units, num_layers=2, batch_first=True)
         self.fc = nn.Linear(lstm_units, vocab_size)
-        self.softmax = nn.Softmax(dim=2)
 
     def forward(self, x):
         x = self.embedding(x)
-        x, _ = self.lstm1(x)
-        x, _ = self.lstm2(x)
-        x = self.fc(x)
-        x = self.softmax(x)
-        return x
+        outputs, _ = self.stacked_lstm(x) # outputs shape is (batch_size, sequence_length, lstm_units)
+        pred = self.fc(outputs[:, -1, :]) # pred shape is (batch_size, vocab_size)
+        return pred
     
 # %%
 # model infos
