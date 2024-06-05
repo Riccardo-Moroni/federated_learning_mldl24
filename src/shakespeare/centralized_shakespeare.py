@@ -59,33 +59,47 @@ with open('./pickles/Y_test.pkl', 'rb') as f:
 # %%
 train_sentence = ' '.join(X_train)
 vocab_train = sorted(set(train_sentence))
-vocab_train.append('<OOV>')
 
 char_to_idx = {char: idx for idx, char in enumerate(vocab_train)}
 idx_to_char = {idx: char for idx, char in enumerate(vocab_train)}
 
-def substitute_oov(sentences, char_to_idx):
-    substituted_sentences = []
-    for s in sentences:
-        new_s = ''.join([char if char in char_to_idx.keys() else '' for char in s])
-        substituted_sentences.append(new_s)
-    return substituted_sentences
+# def substitute_oov(sentences, char_to_idx):
+#     substituted_sentences = []
+#     for s in sentences:
+#         new_s = ''.join([char if char in char_to_idx.keys() else oov for char in s])
+#         substituted_sentences.append(new_s)
+#     return substituted_sentences
 
-X_test = substitute_oov(X_test, char_to_idx)
-Y_test = substitute_oov(Y_test, char_to_idx)
+# X_test = substitute_oov(X_test, char_to_idx)
+# Y_test = substitute_oov(Y_test, char_to_idx)
 
 # %%
 # create a ./tensors/ folder in which to save the (encoded) tensors 
-def encode(data, dict):
-    x = []
-    for i in tqdm(range(len(data))):
-            x.append(np.array([dict[char] for char in data[i]]))
-    return x
+# def encode(data, dict):
+#     x = []
+#     for i in tqdm(range(len(data))):
+#             x.append(np.array([dict[char] for char in data[i]]))
+#     return x
 
-X_train_enc = encode(X_train, char_to_idx)
-Y_train_enc = encode(Y_train, char_to_idx)
-X_test_enc = encode(X_test, char_to_idx)
-Y_test_enc = encode(Y_test, char_to_idx)
+def tokenize_encode(my_list, char_dict, oov_token='<OOV>'):
+    new_list = []
+    for sentence in tqdm(my_list):
+        characters = list(sentence)
+
+        substituted_indices = []
+        for char in characters:
+            if char in char_dict:
+                substituted_indices.append(char_dict[char])
+            else:
+                substituted_indices.append(oov_token)
+    
+        new_list.append(substituted_indices)
+    return new_list
+
+X_train_enc = tokenize_encode(X_train, char_to_idx)
+Y_train_enc = tokenize_encode(Y_train, char_to_idx)
+X_test_enc = tokenize_encode(X_test, char_to_idx)
+Y_test_enc = tokenize_encode(Y_test, char_to_idx)
 
 X_train_tensor = torch.tensor(np.array(X_train_enc), dtype=torch.long)
 Y_train_tensor = torch.tensor(np.array(Y_train_enc), dtype=torch.long)
