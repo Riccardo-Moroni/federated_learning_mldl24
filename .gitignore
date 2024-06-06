@@ -5,3 +5,4 @@ wandb/
 backups/
 pickles/
 tensors/
+saved_models/
