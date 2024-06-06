@@ -3,39 +3,84 @@ import torch
 import torch.nn as nn
 import numpy as np
 from torch.utils.data import DataLoader
-from torch.optim import SGD, lr_scheduler
+from torch.optim import SGD
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import json
-import itertools
 import pickle
-import torch.optim as optim
 from torch.utils.data import TensorDataset
+import random
 
 from CharRNN import CharRNN
 
-# import wandb
-# wandb.login()
+import wandb
+wandb.login()
 
 # %% 
-def x_y_from_path(json_path:str):
-    with open(json_path) as json_data:
-        data_dict = json.load(json_data)
-    X , Y = [], []
-    for k in data_dict['user_data'].keys():
-        X.append(data_dict['user_data'][k]['x'])
-        Y.append(data_dict['user_data'][k]['y'])
-    X = list(itertools.chain(*X))
-    Y = list(itertools.chain(*Y))
-    return X,Y
+def data_pruning(json_train_path, json_test_path, crop_amount=2000, n_clients=100):
+    """
+    Reduces the dimension of LEAF dataset.
+    Samples 'n_clients' clients among those having at least 'crop_amount' training samples.
+    Each client is given 'crop_amount' number of contigous training samples
+
+    Returns:
+        - 4 dictionaries (X_train, Y_train, X_test, Y_test) 
+    """
+    rand_seed=0
+    with open(json_train_path) as train_json_data:
+        train_dict = json.load(train_json_data)
+    with open(json_test_path) as test_json_data:
+        test_dict = json.load(test_json_data)
+
+    users_complete = train_dict['users']
+
+    X_train_cropped, Y_train_cropped, X_test_cropped, Y_test_cropped = {}, {}, {}, {}
+
+    i=0
+    for k in train_dict['user_data'].keys():
+        if train_dict['num_samples'][i] > crop_amount:
+            np.random.seed(rand_seed)
+            start = np.random.randint(len(train_dict['user_data'][k]['x'])-crop_amount)
+            X_train_cropped[k] = train_dict['user_data'][k]['x'][start:start+crop_amount]
+            Y_train_cropped[k] = train_dict['user_data'][k]['y'][start:start+crop_amount]
+            X_test_cropped[k] = test_dict['user_data'][k]['x'][start:start+crop_amount]
+            Y_test_cropped[k] = test_dict['user_data'][k]['y'][start:start+crop_amount]
+            rand_seed+=1
+            i+=1
+        else:
+            i+=1
+
+    users_selected = random.sample(list(X_train_cropped.keys()), n_clients)
+
+    X_train = {key: X_train_cropped[key] for key in users_selected}
+    Y_train = {key: Y_train_cropped[key] for key in users_selected}
+    X_test = {key: X_test_cropped[key] for key in users_selected}
+    Y_test = {key: Y_test_cropped[key] for key in users_selected}
+
+    return X_train, Y_train, X_test, Y_test
+
+
+def concat_dict_values(my_dict):
+    concat = []
+    for v in my_dict.values():
+        if isinstance(v, list):
+            concat.extend(v)
+        else:
+            concat.append(v)
+    return concat
 
 json_train_path = '../../datasets/shakespeare/train/all_data_niid_0_keep_0_train_9.json'
 json_test_path = '../../datasets/shakespeare/test/all_data_niid_0_keep_0_test_9.json'
 
-X_train, Y_train = x_y_from_path(json_train_path)
-X_test, Y_test = x_y_from_path(json_test_path)
+X_train_pruned, Y_train_pruned, X_test_pruned, Y_test_pruned = data_pruning(json_train_path, json_test_path)
+X_train = concat_dict_values(X_train_pruned)
+Y_train = concat_dict_values(Y_train_pruned)
+X_test = concat_dict_values(X_test_pruned)
+Y_test = concat_dict_values(Y_test_pruned)
 
-# save X and Y in ./pickles/ folder
+# %%
+
+# save X and Y in './pickles/' folder
 with open('./pickles/X_train.pkl', 'wb') as f:
     pickle.dump(X_train, f)
 with open('./pickles/Y_train.pkl', 'wb') as f:
@@ -62,7 +107,6 @@ vocab_train = sorted(set(train_sentence))
 vocab_train.append('<OOV>')
 
 char_to_idx = {char: idx for idx, char in enumerate(vocab_train)}
-idx_to_char = {idx: char for idx, char in enumerate(vocab_train)}
 
 # %%
 # create a ./tensors/ folder in which to save the (encoded) tensors 
@@ -93,6 +137,8 @@ Y_train_tensor = torch.tensor(Y_train_enc, dtype=torch.long)
 X_test_tensor = torch.tensor(X_test_enc, dtype=torch.long)
 Y_test_tensor = torch.tensor(Y_test_enc, dtype=torch.long)
 
+
+# %%
 # save tensors
 torch.save(X_train_tensor,'./tensors/X_train_tensor.pt')
 torch.save(Y_train_tensor,'./tensors/Y_train_tensor.pt')
@@ -112,9 +158,9 @@ test_dataset = TensorDataset(X_test_tensor, Y_test_tensor)
 
 # training parameters
 train_params = {
-    'batch_size' : 150,
+    'batch_size' : 100,
     'lr' : 1e-1,
-    'epochs' : 3,
+    'epochs' : 10,
     'momentum': 0.9,
 }
 
@@ -129,14 +175,20 @@ model_params = {
     'lstm_units' : 256,
 }
 
+all_params = train_params.copy()
+all_params.update(model_params)
+wandb.init(
+    project='fl',
+    name=f'centralized_shakespeare',
+    config= all_params
+)
+
 model = CharRNN(vocab_size = model_params['vocab_size'], embed_dim = model_params['embed_dim'], lstm_units=model_params['lstm_units']).cuda()
 model.to('cuda')
 print(model)
 
-criterion = torch.nn.CrossEntropyLoss().cuda()
-optimizer = torch.optim.SGD(model.parameters(), lr=train_params['lr'], momentum=train_params['momentum'], weight_decay=4e-4)
-
-test_freq = 50
+criterion = nn.CrossEntropyLoss().cuda()
+optimizer = SGD(model.parameters(), lr=train_params['lr'], momentum=train_params['momentum'], weight_decay=4e-4)
 
 def train(model):
     accuracies, losses = [], []
@@ -154,6 +206,7 @@ def train(model):
 
         # test (after each single epoch)
         acc, loss = test(model)
+        wandb.log({'acc': acc, 'loss': loss, 'epoch': t})
         accuracies.append(acc)
         losses.append(loss)
 
@@ -188,6 +241,7 @@ accuracies, losses = train(model)
 
 # %%
 # testing one batch on cpu (debug)
+
 # model = CharRNN(vocab_size = model_params['vocab_size'], embed_dim = model_params['embed_dim'], lstm_units=model_params['lstm_units'])
 # model.load_state_dict(torch.load('./saved_models/1epochs_weights.pth'))
 # model.eval()
