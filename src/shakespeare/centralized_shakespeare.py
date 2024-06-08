@@ -10,55 +10,14 @@ import json
 import pickle
 from torch.utils.data import TensorDataset
 import random
+from shakespeare_utils import shakespeare_data_pruning, tokenize_encode
 
 from CharRNN import CharRNN
 
-import wandb
-wandb.login()
+# import wandb
+# wandb.login()
 
 # %% 
-def data_pruning(json_train_path, json_test_path, crop_amount=2000, n_clients=100):
-    """
-    Reduces the dimension of LEAF dataset.
-    Samples 'n_clients' clients among those having at least 'crop_amount' training samples.
-    Each client is given 'crop_amount' number of contigous training samples
-
-    Returns:
-        - 4 dictionaries (X_train, Y_train, X_test, Y_test) 
-    """
-    rand_seed=0
-    with open(json_train_path) as train_json_data:
-        train_dict = json.load(train_json_data)
-    with open(json_test_path) as test_json_data:
-        test_dict = json.load(test_json_data)
-
-    users_complete = train_dict['users']
-
-    X_train_cropped, Y_train_cropped, X_test_cropped, Y_test_cropped = {}, {}, {}, {}
-
-    i=0
-    for k in train_dict['user_data'].keys():
-        if train_dict['num_samples'][i] > crop_amount:
-            np.random.seed(rand_seed)
-            start = np.random.randint(len(train_dict['user_data'][k]['x'])-crop_amount)
-            X_train_cropped[k] = train_dict['user_data'][k]['x'][start:start+crop_amount]
-            Y_train_cropped[k] = train_dict['user_data'][k]['y'][start:start+crop_amount]
-            X_test_cropped[k] = test_dict['user_data'][k]['x'][start:start+crop_amount]
-            Y_test_cropped[k] = test_dict['user_data'][k]['y'][start:start+crop_amount]
-            rand_seed+=1
-            i+=1
-        else:
-            i+=1
-
-    users_selected = random.sample(list(X_train_cropped.keys()), n_clients)
-
-    X_train = {key: X_train_cropped[key] for key in users_selected}
-    Y_train = {key: Y_train_cropped[key] for key in users_selected}
-    X_test = {key: X_test_cropped[key] for key in users_selected}
-    Y_test = {key: Y_test_cropped[key] for key in users_selected}
-
-    return X_train, Y_train, X_test, Y_test
-
 
 def concat_dict_values(my_dict):
     concat = []
@@ -72,15 +31,15 @@ def concat_dict_values(my_dict):
 json_train_path = '../../datasets/shakespeare/train/all_data_niid_0_keep_0_train_9.json'
 json_test_path = '../../datasets/shakespeare/test/all_data_niid_0_keep_0_test_9.json'
 
-X_train_pruned, Y_train_pruned, X_test_pruned, Y_test_pruned = data_pruning(json_train_path, json_test_path)
+X_train_pruned, Y_train_pruned, X_test_pruned, Y_test_pruned = shakespeare_data_pruning(json_train_path, json_test_path)
 X_train = concat_dict_values(X_train_pruned)
 Y_train = concat_dict_values(Y_train_pruned)
 X_test = concat_dict_values(X_test_pruned)
 Y_test = concat_dict_values(Y_test_pruned)
 
 # %%
-
-# save X and Y in './pickles/' folder
+# save pickles. Create a './pickles/' folder. 
+print("Saving pickles")
 with open('./pickles/X_train.pkl', 'wb') as f:
     pickle.dump(X_train, f)
 with open('./pickles/Y_train.pkl', 'wb') as f:
@@ -92,6 +51,7 @@ with open('./pickles/Y_test.pkl', 'wb') as f:
 
 # %%
 # Load pickles
+print("Loading pickles")
 with open('./pickles/X_train.pkl', 'rb') as f:
     X_train = pickle.load(f)
 with open('./pickles/Y_train.pkl', 'rb') as f:
@@ -102,6 +62,7 @@ with open('./pickles/Y_test.pkl', 'rb') as f:
     Y_test = pickle.load(f)
 
 # %%
+# Define the vocabulary and the character to index mapping
 train_sentence = ' '.join(X_train)
 vocab_train = sorted(set(train_sentence))
 vocab_train.append('<OOV>')
@@ -109,28 +70,11 @@ vocab_train.append('<OOV>')
 char_to_idx = {char: idx for idx, char in enumerate(vocab_train)}
 
 # %%
-# create a ./tensors/ folder in which to save the (encoded) tensors 
 
-def tokenize_encode(my_list, char_to_idx):
-    oov_token = len(vocab_train)-1
-    new_list = []
-    for sentence in tqdm(my_list):
-        characters = list(sentence)
-
-        encoded = []
-        for char in characters:
-            if char in char_to_idx:
-                encoded.append(char_to_idx[char])
-            else:
-                encoded.append(oov_token)
-    
-        new_list.append(encoded)
-    return new_list
-
-X_train_enc = np.array(tokenize_encode(X_train, char_to_idx))
-Y_train_enc = np.array(tokenize_encode(Y_train, char_to_idx)).flatten()
-X_test_enc = np.array(tokenize_encode(X_test, char_to_idx))
-Y_test_enc = np.array(tokenize_encode(Y_test, char_to_idx)).flatten()
+X_train_enc = np.array(tokenize_encode(X_train, vocab_train, char_to_idx))
+Y_train_enc = np.array(tokenize_encode(Y_train, vocab_train, char_to_idx)).flatten()
+X_test_enc = np.array(tokenize_encode(X_test, vocab_train, char_to_idx))
+Y_test_enc = np.array(tokenize_encode(Y_test, vocab_train, char_to_idx)).flatten()
 
 X_train_tensor = torch.tensor(X_train_enc, dtype=torch.long)
 Y_train_tensor = torch.tensor(Y_train_enc, dtype=torch.long)
@@ -139,7 +83,8 @@ Y_test_tensor = torch.tensor(Y_test_enc, dtype=torch.long)
 
 
 # %%
-# save tensors
+# save tensors. Create a './tensors/' folder in which to save the (encoded) tensors 
+print("Saving tensors")
 torch.save(X_train_tensor,'./tensors/X_train_tensor.pt')
 torch.save(Y_train_tensor,'./tensors/Y_train_tensor.pt')
 torch.save(X_test_tensor,'./tensors/X_test_tensor.pt')
@@ -147,6 +92,7 @@ torch.save(Y_test_tensor,'./tensors/Y_test_tensor.pt')
 
 # %%
 # load tensors
+print("Loading tensors")
 X_train_tensor = torch.load('./tensors/X_train_tensor.pt')
 Y_train_tensor = torch.load('./tensors/Y_train_tensor.pt')
 X_test_tensor = torch.load('./tensors/X_test_tensor.pt')

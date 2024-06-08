@@ -1,5 +1,4 @@
-# %%
-import torch 
+# %% 
 import torch.nn as nn
 
 # %%
@@ -19,11 +18,11 @@ class CharRNN(nn.Module):
 # %%
 # model infos
 
-# vocab_size = 90 # 86 characters + 4 special tokens (padding, out-of-vocabulary, beginning of line and end of line)
+# vocab_size = 70 # circa
 # embedding_dim = 8
-# hidden_size = 256
+# lstm_units = 256
 
-# model = CharRNN(vocab_size, embedding_dim, hidden_size)
+# model = CharRNN(vocab_size, embedding_dim, lstm_units)
 
 # # print trainable parameters per layer
 # def print_trainable_parameters(model):
