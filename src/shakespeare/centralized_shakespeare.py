@@ -14,8 +14,8 @@ from shakespeare_utils import shakespeare_data_pruning, tokenize_encode
 
 from CharRNN import CharRNN
 
-# import wandb
-# wandb.login()
+import wandb
+wandb.login()
 
 # %% 
 
@@ -105,9 +105,10 @@ test_dataset = TensorDataset(X_test_tensor, Y_test_tensor)
 # training parameters
 train_params = {
     'batch_size' : 100,
-    'lr' : 1e-1,
-    'epochs' : 10,
-    'momentum': 0.9,
+    'lr' : 2e-1,
+    'epochs' : 25,
+    'weight_decay': 4e-4
+    # 'momentum': 0.9,
 }
 
 train_loader = DataLoader(train_dataset, train_params['batch_size'], shuffle=True)
@@ -124,8 +125,8 @@ model_params = {
 all_params = train_params.copy()
 all_params.update(model_params)
 wandb.init(
-    project='fl',
-    name=f'centralized_shakespeare',
+    project='fl_shakespeare',
+    name=f"centralized_lr:{all_params['lr']}_epochs:{all_params['epochs']}_weight_decay:{all_params['weight_decay']}",
     config= all_params
 )
 
@@ -134,11 +135,12 @@ model.to('cuda')
 print(model)
 
 criterion = nn.CrossEntropyLoss().cuda()
-optimizer = SGD(model.parameters(), lr=train_params['lr'], momentum=train_params['momentum'], weight_decay=4e-4)
+optimizer = SGD(model.parameters(), lr=train_params['lr'], weight_decay=4e-4) # momentum=train_params['momentum']
 
 def train(model):
     accuracies, losses = [], []
     for t in range(train_params['epochs']):
+        print(f"Epoch {t+1}:")
         model.train()
         for batch_idx, (inputs, targets) in enumerate(tqdm(train_loader)):
             inputs, targets = inputs.cuda(), targets.cuda()
@@ -184,6 +186,12 @@ def test(model):
 
 # %%
 accuracies, losses = train(model)
+
+# %%
+with open('./pickles/results/centralized/accuracies.pkl', 'wb') as f:
+    pickle.dump(accuracies, f)
+with open('./pickles/results/centralized/losses.pkl', 'wb') as f:
+    pickle.dump(losses, f)
 
 # %%
 # testing one batch on cpu (debug)

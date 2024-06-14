@@ -21,8 +21,8 @@ import sys
 sys.path.append('../') # necessary to import from parant directory
 from client_selector import ClientSelector
 
-# import wandb
-# wandb.login()
+import wandb
+wandb.login()
 
 
 # %%
@@ -39,7 +39,9 @@ params = {
     'tau': 1e-3,
     'gamma': 0.1,
     'participation': 'uniform',
-    'rounds': 2000
+    'rounds': 2000,
+    'weight_decay':4e-4,
+    'crop_amount':4000
 }
 
 import sys
@@ -48,17 +50,17 @@ from client_selector import ClientSelector
 
 client_selector = ClientSelector(params)
 
-# wandb.init(
-#     project='fl',
-#     name=f'federated_shakespeare',
-#     config= params
-# )
+wandb.init(
+    project='fl_shakespeare',
+    name=f"federated_{params['method']}_C:{params['C']}_J:{params['J']}_lr:{params['lr_client']}_partecipation:{params['participation']}_weight_decay:{params['weight_decay']}_epochs:{params['rounds']}",
+    config= params
+)
 
 # %%
 json_train_path = '../../datasets/shakespeare/train/all_data_niid_0_keep_0_train_9.json'
 json_test_path = '../../datasets/shakespeare/test/all_data_niid_0_keep_0_test_9.json'
 
-X_train_pruned, Y_train_pruned, X_test_pruned, Y_test_pruned = shakespeare_data_pruning(json_train_path, json_test_path, crop_amount=3000)
+X_train_pruned, Y_train_pruned, X_test_pruned, Y_test_pruned = shakespeare_data_pruning(json_train_path, json_test_path, crop_amount=params['crop_amount'])
 # data is already  split at this point {user1:[2000],...,user100:[2000]}
  
 # %%
@@ -97,6 +99,12 @@ print(X_train_tensor.shape, Y_train_tensor.shape)
 print(X_test_tensor.shape, Y_test_tensor.shape)
 
 # train_dataset = TensorDataset(X_train_tensor, Y_train_tensor)
+
+train_datasets = []
+for k in range(K):
+    X_k = X_train_tensor[k]
+    Y_k = Y_train_tensor[k]
+    train_datasets.append(TensorDataset(X_k, Y_k))
 
 
 # %%
@@ -178,10 +186,7 @@ def test(model):
 def client_update(model, k, params):
     model.train()
     optimizer = torch.optim.SGD(model.parameters(), lr=params['lr_client'], weight_decay=4e-4)
-    X_k = X_train_tensor[k]
-    Y_k = Y_train_tensor[k]
-    train_dataset_k = TensorDataset(X_k, Y_k)
-    loader = DataLoader(train_dataset_k, batch_size=params['B'], shuffle=True)
+    loader = DataLoader(train_datasets[k], batch_size=params['B'], shuffle=True)
 
     client_loss, client_correct, client_total = 0, 0, 0
     i = 0
@@ -218,6 +223,7 @@ def train(model, params):
     w = model.state_dict()
     m = reduce_w([w], lambda x: torch.mul(x[0], 0.0))
     for t in range(params['rounds']):
+        print(f"Epoch {t+1}")
         round_loss, round_accuracy = 0, 0
         s = client_selector.sample()
         # print(sorted(s))
@@ -229,7 +235,7 @@ def train(model, params):
             round_loss += client_loss
             round_accuracy += client_accuracy
         round_loss_avg = round_loss / len(s)
-        round_accuracy_avg = client_accuracy / len(s)
+        round_accuracy_avg = round_accuracy / len(s)
         train_accuracies.append(round_loss_avg)
         train_losses.append(round_accuracy_avg)
 
@@ -269,17 +275,23 @@ def train(model, params):
             acc, loss = test(model)
             test_accuracies.append(acc)
             test_losses.append(loss)
-            # wandb.log({'acc': acc, 'loss': loss, 'round': t})
+            wandb.log({'acc': acc, 'loss': loss, "train_round_acc_avg":round_accuracy_avg, 'train_round_loss_avg': round_loss_avg, 'round': t})
 
         # acc, loss = test(model)
         # test_accuracies.append(acc)
         # test_losses.append(loss)
         # wandb.log({'acc': acc, 'loss': loss, 'round': t})
     
-    return test_accuracies, test_losses, train_accuracies, train_losses
+    return test_accuracies, test_losses
 
 # %%
 accuracies, losses = train(model, params)
+
+# %%
+with open('./pickles/results/federated/accuracies.pkl', 'wb') as f:
+    pickle.dump(accuracies, f)
+with open('./pickles/results/federated/losses.pkl', 'wb') as f:
+    pickle.dump(losses, f)
 
 # %%
 plt.xlabel('rounds')
