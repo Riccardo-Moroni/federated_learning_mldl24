@@ -1,7 +1,6 @@
 # %% 
 import torch.nn as nn
 
-# %%
 class CharRNN(nn.Module):
     def __init__(self, vocab_size, embed_dim, lstm_units):
         super(CharRNN, self).__init__()
@@ -10,6 +9,7 @@ class CharRNN(nn.Module):
         self.fc = nn.Linear(lstm_units, vocab_size)
 
     def forward(self, x):
+        self.stacked_lstm.flatten_parameters() # compacting weights to ensure weights are contiguous and avoid 
         x = self.embedding(x)
         outputs, _ = self.stacked_lstm(x) # outputs shape is (batch_size, sequence_length, lstm_units)
         pred = self.fc(outputs[:, -1, :]) # pred shape is (batch_size, vocab_size)
