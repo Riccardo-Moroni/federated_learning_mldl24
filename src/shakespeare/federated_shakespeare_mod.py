@@ -50,11 +50,11 @@ from client_selector import ClientSelector
 
 client_selector = ClientSelector(params)
 
-wandb.init(
-    project='fl_shakespeare',
-    name=f"federated_mod_{params['method']}_C:{params['C']}_J:{params['J']}_lr:{params['lr_client']}_partecipation:{params['participation']}_weight_decay:{params['weight_decay']}_epochs:{params['rounds']}",
-    config= params
-)
+# wandb.init(
+#     project='fl_shakespeare',
+#     name=f"federated_mod_{params['method']}_C:{params['C']}_J:{params['J']}_lr:{params['lr_client']}_partecipation:{params['participation']}_weight_decay:{params['weight_decay']}_epochs:{params['rounds']}",
+#     config= params
+# )
 
 # %%
 json_train_path = '../../datasets/shakespeare/train/all_data_niid_0_keep_0_train_9.json'
@@ -89,16 +89,17 @@ Y_test_enc = np.array(tokenize_encode(Y_test_concat, vocab, char_to_idx)).squeez
 # to tensor
 X_train_tensor = torch.tensor(X_train_enc, dtype=torch.long) # (100, crop_amount, 80)
 Y_train_tensor = torch.tensor(Y_train_enc, dtype=torch.long).squeeze(-1) # (100, crop_amount, 1) --> (100, crop_amount,)
-X_test_tensor = torch.tensor(X_test_enc, dtype=torch.long)
-Y_test_tensor = torch.tensor(Y_test_enc, dtype=torch.long)
+
+X_test_tensor = torch.tensor(X_test_enc, dtype=torch.long).cuda()
+Y_test_tensor = torch.tensor(Y_test_enc, dtype=torch.long).cuda()
 
 # extract the validation set (500 data points)
-X_val_tensor = X_train_tensor[:, 3500:4000]
-Y_val_tensor = Y_train_tensor[:, 3500:4000]
+X_val_tensor = X_train_tensor[:, 3500:4000].cuda()
+Y_val_tensor = Y_train_tensor[:, 3500:4000].cuda()
 
 # delete the validation set from train set
-X_train_tensor = X_train_tensor[:, 0:3500]
-Y_train_tensor = Y_train_tensor[:, 0:3500]
+X_train_tensor = X_train_tensor[:, 0:3500].cuda()
+Y_train_tensor = Y_train_tensor[:, 0:3500].cuda()
 
 test_dataset = TensorDataset(X_test_tensor, Y_test_tensor)
 test_loader = DataLoader(test_dataset, batch_size=100)
