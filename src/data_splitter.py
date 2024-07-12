@@ -158,7 +158,9 @@ class DataSplitter:
 
         for c in tqdm(range(self.K)):
             client_data = []
-            clients_labels = list(cifar100_df["targets"].unique()[:self.n_labels])
+            all_labels = list(cifar100_df["targets"].unique())
+            np.random.shuffle(all_labels)
+            clients_labels = all_labels[:self.n_labels]
             client_labels_dict[c] = clients_labels
 
             for label in clients_labels:
