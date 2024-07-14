@@ -30,7 +30,7 @@ Same parameter structure as for FedAvg.
 ## MGDA 
 Location: 
 - `src/fed_mgda.ipynb` for CIFAR-100
--  `src/shakespeare/federated_shakespeare_mod.py` for Shakespeare dataset
+-  `src/shakespeare/federated_shakespeare_MGDA.py` for Shakespeare dataset
 
 Same parameter structure as for FedAvg with additional parameter:
 - `lr_server` server learning rate
