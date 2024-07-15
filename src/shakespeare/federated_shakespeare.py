@@ -22,7 +22,7 @@ sys.path.append('../') # necessary to import from parant directory
 from client_selector import ClientSelector
 
 import wandb
-wandb.login()
+# wandb.login()
 
 
 # %%
@@ -30,29 +30,25 @@ K = 100
 
 params = {
     'K': K,
-    'C': 0.3,
+    'C': 1,
     'B': 100,
-    'J': 8,
+    'J': 5,
     # 'lr_server': 1e-1,
-    'lr_client': 5e-1,
+    'lr_client': 1,
     'method': 'fedavg',
     'tau': 1e-3,
     'gamma': 0.1,
     'participation': 'uniform',
-    'rounds': 2000,
-    'weight_decay':4e-4,
-    'crop_amount':4000
+    'rounds': 150,
+    'weight_decay':1e-4,
+    'crop_amount':2000
 }
-
-import sys
-sys.path.append('../')
-from client_selector import ClientSelector
 
 client_selector = ClientSelector(params)
 
 wandb.init(
-    project='fl_shakespeare',
-    name=f"federated_{params['method']}_C:{params['C']}_J:{params['J']}_lr:{params['lr_client']}_partecipation:{params['participation']}_weight_decay:{params['weight_decay']}_epochs:{params['rounds']}",
+    project='fl_Shakespeare_gridsearch',
+    name=f"method:{params['method']}| C:{params['C']}| J:{params['J']}| lr:{params['lr_client']}| partecipation:{params['participation']}| weight_decay:{params['weight_decay']}| rounds:{params['rounds']}",
     config= params
 )
 
@@ -161,7 +157,7 @@ optimizer = SGD(model.parameters(), lr=params['lr_client'], weight_decay=4e-4)
 
 # %%
 
-test_freq = 50
+test_freq = 5
 
 def test(model):
     model.eval()
@@ -275,7 +271,7 @@ def train(model, params):
             acc, loss = test(model)
             test_accuracies.append(acc)
             test_losses.append(loss)
-            wandb.log({'acc': acc, 'loss': loss, "train_round_acc_avg":round_accuracy_avg, 'train_round_loss_avg': round_loss_avg, 'round': t})
+            # wandb.log({'acc': acc, 'loss': loss, "train_round_acc_avg":round_accuracy_avg, 'train_round_loss_avg': round_loss_avg, 'round': t})
 
         # acc, loss = test(model)
         # test_accuracies.append(acc)

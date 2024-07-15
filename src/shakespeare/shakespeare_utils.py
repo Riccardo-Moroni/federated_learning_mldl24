@@ -11,7 +11,10 @@ def shakespeare_data_pruning(json_train_path, json_test_path, crop_amount=2000, 
     Each client is given 'crop_amount' number of contigous training samples
 
     Returns:
-        - 4 dictionaries (X_train, Y_train, X_test, Y_test) 
+        - 4 dictionaries (X_train, Y_train, X_test, Y_test) \n
+        The test data is retrieved from the test split automatically created by LEAF. \n
+        Based on what clients are chosen, the test data has a different number of data points. \n
+        At this stage, X_train and Y_train still include the validation set, you still need to separate them. 
     """
     rand_seed=0
     with open(json_train_path) as train_json_data:
@@ -71,4 +74,20 @@ def concat_dict_values(my_dict):
         else:
             concat.append(v)
     return concat
+
+def split_concat_dict_values(my_dict):
+    """
+    Returns two arrays, the first contain [:1800] of all the values of the input my_dict, the second contains the [1800:] of all the values of my_dict
+    """
+    first_2000_sentences = []
+    remaining_500_sentences = []
+    
+    for v in my_dict.values():
+        # if isinstance(v, list):
+            first_2000_sentences.extend(v[:1800])
+            remaining_500_sentences.extend(v[1800:])
+        # else:
+            # raise ValueError("split_concat_dict_values() Error")
+    
+    return first_2000_sentences, remaining_500_sentences
 # %%

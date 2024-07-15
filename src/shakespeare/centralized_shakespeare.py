@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from torch.utils.data import DataLoader
-from torch.optim import SGD
+from torch.optim import SGD, lr_scheduler
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import json
@@ -15,7 +15,7 @@ from shakespeare_utils import shakespeare_data_pruning, tokenize_encode
 from CharRNN import CharRNN
 
 import wandb
-wandb.login()
+# wandb.login()
 
 # %% 
 
@@ -76,10 +76,10 @@ Y_train_enc = np.array(tokenize_encode(Y_train, vocab_train, char_to_idx)).flatt
 X_test_enc = np.array(tokenize_encode(X_test, vocab_train, char_to_idx))
 Y_test_enc = np.array(tokenize_encode(Y_test, vocab_train, char_to_idx)).flatten()
 
-X_train_tensor = torch.tensor(X_train_enc, dtype=torch.long)
-Y_train_tensor = torch.tensor(Y_train_enc, dtype=torch.long)
-X_test_tensor = torch.tensor(X_test_enc, dtype=torch.long)
-Y_test_tensor = torch.tensor(Y_test_enc, dtype=torch.long)
+X_train_tensor = torch.tensor(X_train_enc, dtype=torch.long).cuda()
+Y_train_tensor = torch.tensor(Y_train_enc, dtype=torch.long).cuda()
+X_test_tensor = torch.tensor(X_test_enc, dtype=torch.long).cuda()
+Y_test_tensor = torch.tensor(Y_test_enc, dtype=torch.long).cuda()
 
 
 # %%
