@@ -3,7 +3,7 @@
 ## FedAvg
 Location: 
 - `src/fedavg.ipynb` for CIFAR-100
-- `src/shakespeare/federated_shakespeare.py` for Shakespeare dataset
+- `src/shakespeare/federated_shakespeare_gridsearch.py` for Shakespeare dataset
 
 Parameters are stored in `params`:
 - `K` number of clients
@@ -34,3 +34,5 @@ Location:
 
 Same parameter structure as for FedAvg with additional parameter:
 - `lr_server` server learning rate
+
+In `src/shakespeare/data_distributions_histograms.ipynb` You can find the histograms about the frequency of unique labels belonging to clients for iid and non-IID splits of shakespeare dataset.
